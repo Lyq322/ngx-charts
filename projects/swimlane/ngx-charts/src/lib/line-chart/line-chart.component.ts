@@ -23,6 +23,8 @@ import { LegendOptions, LegendPosition } from '../common/types/legend.model';
 import { ScaleType } from '../common/types/scale-type.enum';
 import { ViewDimensions } from '../common/types/view-dimension.interface';
 import { isPlatformServer } from '@angular/common';
+import { brushX } from 'd3-brush';
+import { select } from 'd3-selection';
 
 @Component({
   selector: 'ngx-charts-line-chart',
@@ -151,32 +153,16 @@ import { isPlatformServer } from '@angular/common';
           </svg:g>
         </svg:g>
       </svg:g>
-      <svg:g
-        ngx-charts-timeline
-        *ngIf="timeline && scaleType != 'ordinal'"
-        [attr.transform]="timelineTransform"
-        [results]="results"
-        [view]="[timelineWidth, height]"
-        [height]="timelineHeight"
-        [scheme]="scheme"
-        [customColors]="customColors"
-        [scaleType]="scaleType"
-        [legend]="legend"
-        (onDomainChange)="updateDomain($event)"
-      >
-        <svg:g *ngFor="let series of results; trackBy: trackBy">
-          <svg:g
-            ngx-charts-line-series
-            [xScale]="timelineXScale"
-            [yScale]="timelineYScale"
-            [colors]="colors"
-            [data]="series"
-            [scaleType]="scaleType"
-            [curve]="curve"
-            [hasRange]="hasRange"
-            [animations]="animations"
+      <svg:g class="timeline" [attr.transform]="transform">
+        <svg:filter [attr.id]="filterId">
+          <svg:feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0 0 0 1 0"
           />
-        </svg:g>
+        </svg:filter>
+        <svg:rect x="0" [attr.width]="dims.width" y="0" [attr.height]="dims.height" class="brush-background" />
+        <svg:g class="brush"></svg:g>
       </svg:g>
     </ngx-charts-chart>
   `,
@@ -210,7 +196,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
   @Input() xAxisLabel: string;
   @Input() yAxisLabel: string;
   @Input() autoScale: boolean;
-  @Input() timeline: boolean;
+  @Input() panning: string = "none";
   @Input() gradient: boolean;
   @Input() showGridLines: boolean = true;
   @Input() curve: any = curveLinear;
@@ -237,6 +223,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
   @Input() yScaleMax: number;
   @Input() wrapTicks = false;
 
+  @Output() onFilter = new EventEmitter();
   @Output() activate: EventEmitter<any> = new EventEmitter();
   @Output() deactivate: EventEmitter<any> = new EventEmitter();
 
@@ -270,7 +257,13 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
   timelineXDomain: any;
   timelineTransform: any;
   timelinePadding: number = 10;
-
+  initialized: boolean = false;
+  filterId: any;
+  filter: any;
+  brush: any;
+  timeScale: any;
+  originalXDomain: any;
+  lastScrollTop: number = 0;
   isSSR = false;
 
   ngOnInit() {
@@ -297,13 +290,16 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       legendPosition: this.legendPosition
     });
 
-    if (this.timeline) {
+    if (this.panning == "timeline") {
       this.dims.height -= this.timelineHeight + this.margin[2] + this.timelinePadding;
     }
 
     this.xDomain = this.getXDomain();
     if (this.filteredDomain) {
       this.xDomain = this.filteredDomain;
+    }
+    else {
+      this.originalXDomain = this.xDomain;
     }
 
     this.yDomain = this.getYDomain();
@@ -321,10 +317,23 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
 
     this.clipPathId = 'clip' + id().toString();
     this.clipPath = `url(#${this.clipPathId})`;
+    
+    if (this.brush) {
+      console.log("hi");
+      this.updateBrush();
+    }
+
+    this.filterId = 'filter' + id().toString();
+    this.filter = `url(#${this.filterId})`;
+
+    if (!this.initialized) {
+      this.addBrush();
+      this.initialized = true;
+    }
   }
 
   updateTimeline(): void {
-    if (this.timeline) {
+    if (this.panning == "timeline") {
       this.timelineWidth = this.dims.width;
       this.timelineXDomain = this.getXDomain();
       this.timelineXScale = this.getXScale(this.timelineXDomain, this.timelineWidth);
@@ -438,6 +447,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
     this.filteredDomain = domain;
     this.xDomain = this.filteredDomain;
     this.xScale = this.getXScale(this.xDomain, this.dims.width);
+    select(this.chartElement.nativeElement).select('.brush').call(this.brush.move, null);
   }
 
   updateHoveredVertical(item): void {
@@ -530,5 +540,86 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       this.deactivate.emit({ value: entry, entries: [] });
     }
     this.activeEntries = [];
+  }
+
+  addBrush(): void {
+    if (this.brush) return;
+
+    const height = this.height;
+    const width = this.width;
+
+    this.brush = brushX()
+      .extent([
+        [0, 0],
+        [width, height]
+      ])
+      .on('end', ({ selection }) => {
+        if (!selection) return;
+        const newSelection = selection || this.xScale.range();
+        const newDomain = newSelection.map(this.xScale.invert);
+        //const newDomain = newSelection.map(this.timeScale.invert);
+
+        this.onFilter.emit(newDomain);
+        this.cd.markForCheck();
+
+        this.updateDomain(newDomain);
+      });
+
+    select(this.chartElement.nativeElement).select('.brush').call(this.brush);
+
+    select(this.chartElement.nativeElement).select('.brush').on('click', () => {
+      this.onFilter.emit(this.originalXDomain);
+      this.updateDomain(this.originalXDomain);
+    });
+
+    select('body').on('keydown', (e) => {
+      if (this.xDomain[0] instanceof Date) {
+        if (e.code == "ArrowLeft") {
+          const diff = Math.min((this.xDomain[1].getTime() - this.xDomain[0].getTime()) / 100, this.xDomain[0].getTime() - this.originalXDomain[0].getTime());
+          this.xDomain[0] = new Date(this.xDomain[0].getTime() - diff);
+          this.xDomain[1] = new Date(this.xDomain[1].getTime() - diff);
+        }
+        else if (e.code == "ArrowRight") {
+          const diff = Math.min((this.xDomain[1].getTime() - this.xDomain[0].getTime()) / 100, this.originalXDomain[1].getTime() - this.xDomain[1].getTime());
+          this.xDomain[0] = new Date(this.xDomain[0].getTime() + diff);
+          this.xDomain[1] = new Date(this.xDomain[1].getTime() + diff);
+        }
+      }
+      else {
+        if (e.code == "ArrowLeft") {
+          const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.xDomain[0] - this.originalXDomain[0]);
+          this.xDomain[0] = new Date(this.xDomain[0] - diff);
+          this.xDomain[1] = new Date(this.xDomain[1] - diff);
+        }
+        else if (e.code == "ArrowRight") {
+          const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.originalXDomain[1] - this.xDomain[1]);
+          this.xDomain[0] = new Date(this.xDomain[0] + diff);
+          this.xDomain[1] = new Date(this.xDomain[1] + diff);
+        }
+      }
+      this.update();
+    });
+  }
+
+  updateBrush(): void {
+    if (!this.brush) return;
+
+    const height = this.dims.height;
+    const width = this.dims.width;
+
+    this.brush.extent([
+      [0, 0],
+      [width, height]
+    ]);
+    select(this.chartElement.nativeElement).select('.brush').call(this.brush);
+
+    // clear hardcoded properties so they can be defined by CSS
+    select(this.chartElement.nativeElement)
+      .select('.selection')
+      .attr('fill', undefined)
+      .attr('stroke', undefined)
+      .attr('fill-opacity', undefined);
+
+    this.cd.markForCheck();
   }
 }

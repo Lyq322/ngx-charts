@@ -848,7 +848,6 @@ const chartGroups = [
           'showYAxisLabel',
           'yAxisLabel',
           'autoScale',
-          'timeline',
           'showGridLines',
           'curve',
           'rangeFillOpacity',

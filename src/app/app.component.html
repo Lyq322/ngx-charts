@@ -372,7 +372,7 @@
         [xScaleMax]="xScaleMax"
         [yScaleMin]="yScaleMin"
         [yScaleMax]="yScaleMax"
-        [timeline]="timeline"
+        [panning]="panning"
         [showGridLines]="showGridLines"
         [curve]="curve"
         [rangeFillOpacity]="rangeFillOpacity"
@@ -387,6 +387,7 @@
         (select)="select($event)"
         (activate)="activate($event)"
         (deactivate)="deactivate($event)"
+        (onFilter)="onFilter($event)"
       >
       </ngx-charts-line-chart>
       <ngx-charts-polar-chart
@@ -819,7 +820,6 @@
           [xAxisLabel]="'angle'"
           [yAxisLabel]="'radius'"
           [autoScale]="autoScale"
-          [timeline]="timeline"
           [showGridLines]="showGridLines"
           [curve]="curves['Cardinal']"
           [rangeFillOpacity]="rangeFillOpacity"
@@ -953,7 +953,7 @@
         [xAxisLabel]="xAxisLabel"
         [yAxisLabel]="yAxisLabel"
         [autoScale]="autoScale"
-        [timeline]="timeline"
+        [panning]="panning"
         [showGridLines]="showGridLines"
         [curve]="curve"
         [rangeFillOpacity]="rangeFillOpacity"
@@ -1424,11 +1424,12 @@
           <br />
         </div>
         <div *ngIf="chart.options.includes('timeline')">
-          <label>
-            <input type="checkbox" [(ngModel)]="timeline" />
-            Timeline
-          </label>
-          <br />
+          <label>Panning</label> <br />
+          <select [(ngModel)]="panning">
+            <option value="none">None</option>
+            <option value="timeline">Timeline</option>
+            <option value="onChart">On Chart</option>
+          </select>
         </div>
         <div *ngIf="chart.options.includes('curve')">
           <label>Line Interpolation</label>
