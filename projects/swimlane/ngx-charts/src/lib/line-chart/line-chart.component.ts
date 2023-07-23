@@ -154,15 +154,14 @@ import { select } from 'd3-selection';
         </svg:g>
       </svg:g>
       <svg:g class="timeline" [attr.transform]="transform">
-        <svg:filter [attr.id]="filterId">
+        <svg:filter *ngIf="panning == 'onChart'" [attr.id]="filterId">
           <svg:feColorMatrix
             in="SourceGraphic"
             type="matrix"
             values="0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0 0 0 1 0"
           />
         </svg:filter>
-        <svg:rect x="0" [attr.width]="dims.width" y="0" [attr.height]="dims.height" class="brush-background" />
-        <svg:g class="brush"></svg:g>
+        <svg:g *ngIf="panning == 'onChart'" class="brush"></svg:g>
       </svg:g>
     </ngx-charts-chart>
   `,
@@ -317,18 +316,21 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
 
     this.clipPathId = 'clip' + id().toString();
     this.clipPath = `url(#${this.clipPathId})`;
+
+    if (this.panning == "onChart") {
     
-    if (this.brush) {
-      console.log("hi");
-      this.updateBrush();
-    }
+      if (this.brush) {
+        this.updateBrush();
+      }
 
-    this.filterId = 'filter' + id().toString();
-    this.filter = `url(#${this.filterId})`;
+      this.filterId = 'filter' + id().toString();
+      this.filter = `url(#${this.filterId})`;
 
-    if (!this.initialized) {
-      this.addBrush();
-      this.initialized = true;
+      if (!this.initialized) {
+        this.addBrush();
+        this.initialized = true;
+      }
+
     }
   }
 
@@ -446,8 +448,20 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
   updateDomain(domain): void {
     this.filteredDomain = domain;
     this.xDomain = this.filteredDomain;
-    this.xScale = this.getXScale(this.xDomain, this.dims.width);
     select(this.chartElement.nativeElement).select('.brush').call(this.brush.move, null);
+
+    let curRange, originalRange;
+    if (this.xDomain[0] instanceof Date) {
+      curRange = this.filteredDomain[1].getTime() - this.filteredDomain[0].getTime();
+      originalRange = this.originalXDomain[1].getTime() - this.originalXDomain[0].getTime();
+    }
+    else {
+      curRange = this.filteredDomain[1] - this.filteredDomain[0];
+      originalRange = this.originalXDomain[1] - this.originalXDomain[0];
+    }
+    if (curRange < originalRange / 100) return;
+
+    this.xScale = this.getXScale(this.xDomain, this.dims.width);
   }
 
   updateHoveredVertical(item): void {
@@ -544,7 +558,6 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
 
   addBrush(): void {
     if (this.brush) return;
-
     const height = this.height;
     const width = this.width;
 
@@ -567,7 +580,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
 
     select(this.chartElement.nativeElement).select('.brush').call(this.brush);
 
-    select(this.chartElement.nativeElement).select('.brush').on('click', () => {
+    select(this.chartElement.nativeElement).select('.timeline').on('click', () => {
       this.onFilter.emit(this.originalXDomain);
       this.updateDomain(this.originalXDomain);
     });

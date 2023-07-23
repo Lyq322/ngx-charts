@@ -181,7 +181,7 @@ export class AppComponent implements OnInit {
   // line, area
   autoScale = true;
   timeline = "none";
-  panning = "none";
+  panning = "onChart";
 
   // margin
   margin: boolean = false;
