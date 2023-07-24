@@ -163,6 +163,33 @@ import { select } from 'd3-selection';
         </svg:filter>
         <svg:g *ngIf="panning == 'onChart'" class="brush"></svg:g>
       </svg:g>
+      <svg:g
+        ngx-charts-timeline
+        *ngIf="panning == 'timeline' && scaleType != 'ordinal'"
+        [attr.transform]="timelineTransform"
+        [results]="results"
+        [view]="[timelineWidth, height]"
+        [height]="timelineHeight"
+        [scheme]="scheme"
+        [customColors]="customColors"
+        [scaleType]="scaleType"
+        [legend]="legend"
+        (onDomainChange)="updateDomain($event)"
+      >
+        <svg:g *ngFor="let series of results; trackBy: trackBy">
+          <svg:g
+            ngx-charts-line-series
+            [xScale]="timelineXScale"
+            [yScale]="timelineYScale"
+            [colors]="colors"
+            [data]="series"
+            [scaleType]="scaleType"
+            [curve]="curve"
+            [hasRange]="hasRange"
+            [animations]="animations"
+          />
+        </svg:g>
+      </svg:g>
     </ngx-charts-chart>
   `,
   styleUrls: ['../common/base-chart.component.scss'],
@@ -318,7 +345,6 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
     this.clipPath = `url(#${this.clipPathId})`;
 
     if (this.panning == "onChart") {
-    
       if (this.brush) {
         this.updateBrush();
       }
@@ -329,8 +355,13 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       if (!this.initialized) {
         this.addBrush();
         this.initialized = true;
+        setTimeout(() => {
+          this.updateBrush();
+        }, 0);
       }
-
+    }
+    else {
+      this.initialized = false;
     }
   }
 
@@ -448,7 +479,10 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
   updateDomain(domain): void {
     this.filteredDomain = domain;
     this.xDomain = this.filteredDomain;
-    select(this.chartElement.nativeElement).select('.brush').call(this.brush.move, null);
+    
+    if (this.panning == 'onChart') {
+      select(this.chartElement.nativeElement).select('.brush').call(this.brush.move, null);
+    }
 
     let curRange, originalRange;
     if (this.xDomain[0] instanceof Date) {
@@ -557,7 +591,6 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
   }
 
   addBrush(): void {
-    if (this.brush) return;
     const height = this.height;
     const width = this.width;
 
@@ -612,18 +645,38 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       }
       this.update();
     });
+
   }
+
+  newUpdate(): void {
+    if (this.brush) {
+      this.updateBrush();
+    }
+
+    this.filterId = 'filter' + id().toString();
+    this.filter = `url(#${this.filterId})`;
+
+    if (!this.initialized) {
+      this.addBrush();
+      this.initialized = true;
+      setTimeout(() => {
+        //select(this.chartElement.nativeElement).select('.brush').call(this.brush);
+      }, 1);
+    }
+  }
+
 
   updateBrush(): void {
     if (!this.brush) return;
-
     const height = this.dims.height;
     const width = this.dims.width;
+    console.log(height, width);
 
     this.brush.extent([
       [0, 0],
       [width, height]
     ]);
+
     select(this.chartElement.nativeElement).select('.brush').call(this.brush);
 
     // clear hardcoded properties so they can be defined by CSS
@@ -632,7 +685,6 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       .attr('fill', undefined)
       .attr('stroke', undefined)
       .attr('fill-opacity', undefined);
-
     this.cd.markForCheck();
   }
 }

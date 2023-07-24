@@ -79,6 +79,7 @@ export class Timeline implements OnChanges {
   }
 
   update(): void {
+    console.log("hi");
     this.dims = this.getDims();
     this.height = this.dims.height;
     const offsetY = this.view[1] - this.height;
