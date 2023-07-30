@@ -7,6 +7,7 @@ import {
   HostListener,
   ChangeDetectionStrategy,
   ContentChild,
+  ViewChild,
   TemplateRef,
   OnInit
 } from '@angular/core';
@@ -25,6 +26,7 @@ import { ViewDimensions } from '../common/types/view-dimension.interface';
 import { isPlatformServer } from '@angular/common';
 import { brushX } from 'd3-brush';
 import { select } from 'd3-selection';
+import { TooltipArea } from '../common/tooltip-area.component';
 
 @Component({
   selector: 'ngx-charts-line-chart',
@@ -119,38 +121,7 @@ import { select } from 'd3-selection';
             </svg:g>
           </svg:g>
 
-          <svg:g *ngIf="!tooltipDisabled" (mouseleave)="hideCircles()">
-            <svg:g
-              ngx-charts-tooltip-area
-              [dims]="dims"
-              [xSet]="xSet"
-              [xScale]="xScale"
-              [yScale]="yScale"
-              [results]="results"
-              [colors]="colors"
-              [tooltipDisabled]="tooltipDisabled"
-              [tooltipTemplate]="seriesTooltipTemplate"
-              (hover)="updateHoveredVertical($event)"
-            />
-
-            <svg:g *ngFor="let series of results">
-              <svg:g
-                ngx-charts-circle-series
-                [xScale]="xScale"
-                [yScale]="yScale"
-                [colors]="colors"
-                [data]="series"
-                [scaleType]="scaleType"
-                [visibleValue]="hoveredVertical"
-                [activeEntries]="activeEntries"
-                [tooltipDisabled]="tooltipDisabled"
-                [tooltipTemplate]="tooltipTemplate"
-                (select)="onClick($event)"
-                (activate)="onActivate($event)"
-                (deactivate)="onDeactivate($event)"
-              />
-            </svg:g>
-          </svg:g>
+          
         </svg:g>
       </svg:g>
       <svg:g class="timeline" [attr.transform]="transform">
@@ -161,7 +132,12 @@ import { select } from 'd3-selection';
             values="0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0 0 0 1 0"
           />
         </svg:filter>
-        <svg:g *ngIf="panning == 'onChart'" class="brush"></svg:g>
+        <svg:g 
+          *ngIf="panning == 'onChart'" 
+          class="brush"
+          (mousemove)="mouseMove($event)"
+          (mouseleave)="mouseLeave()"
+        ></svg:g>
       </svg:g>
       <svg:g
         ngx-charts-timeline
@@ -188,6 +164,44 @@ import { select } from 'd3-selection';
             [hasRange]="hasRange"
             [animations]="animations"
           />
+        </svg:g>
+      </svg:g>
+      <svg:g [attr.transform]="transform" class="line-chart chart">
+        <svg:g [attr.clip-path]="clipPath">
+          <svg:g *ngIf="!tooltipDisabled" (mouseleave)="hideCircles()">
+            <svg:g
+              ngx-charts-tooltip-area
+              [dims]="dims"
+              [xSet]="xSet"
+              [xScale]="xScale"
+              [yScale]="yScale"
+              [results]="results"
+              [colors]="colors"
+              [tooltipDisabled]="tooltipDisabled"
+              [tooltipTemplate]="seriesTooltipTemplate"
+              [panning]="panning"
+              (hover)="updateHoveredVertical($event)"
+            />
+
+            <svg:g *ngFor="let series of results">
+              <svg:g
+                ngx-charts-circle-series
+                [xScale]="xScale"
+                [yScale]="yScale"
+                [colors]="colors"
+                [data]="series"
+                [scaleType]="scaleType"
+                [visibleValue]="hoveredVertical"
+                [activeEntries]="activeEntries"
+                [tooltipDisabled]="tooltipDisabled"
+                [tooltipTemplate]="tooltipTemplate"
+                [brushEnd]="brushEnd"
+                (select)="onClick($event)"
+                (activate)="onActivate($event)"
+                (deactivate)="onDeactivate($event)"
+              />
+            </svg:g>
+          </svg:g>
         </svg:g>
       </svg:g>
     </ngx-charts-chart>
@@ -255,6 +269,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
 
   @ContentChild('tooltipTemplate') tooltipTemplate: TemplateRef<any>;
   @ContentChild('seriesTooltipTemplate') seriesTooltipTemplate: TemplateRef<any>;
+  @ViewChild(TooltipArea) tooltipArea:TooltipArea;
 
   dims: ViewDimensions;
   xSet: any;
@@ -291,6 +306,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
   originalXDomain: any;
   lastScrollTop: number = 0;
   isSSR = false;
+  brushEnd: boolean = true;
 
   ngOnInit() {
     if (isPlatformServer(this.platformId)) {
@@ -599,18 +615,22 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
         [0, 0],
         [width, height]
       ])
+      .on('start', () => {
+        this.tooltipArea.hideTooltip();
+        this.brushEnd = false;
+      })
       .on('end', ({ selection }) => {
+        this.brushEnd = true;
         if (!selection) return;
         const newSelection = selection || this.xScale.range();
         const newDomain = newSelection.map(this.xScale.invert);
-        //const newDomain = newSelection.map(this.timeScale.invert);
 
         this.onFilter.emit(newDomain);
         this.cd.markForCheck();
 
         this.updateDomain(newDomain);
       });
-
+      
     select(this.chartElement.nativeElement).select('.brush').call(this.brush);
 
     select(this.chartElement.nativeElement).select('.timeline').on('click', () => {
@@ -631,46 +651,26 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
           this.xDomain[1] = new Date(this.xDomain[1].getTime() + diff);
         }
       }
-      else {
+      else if (typeof this.xDomain[0] == 'number') {
         if (e.code == "ArrowLeft") {
           const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.xDomain[0] - this.originalXDomain[0]);
-          this.xDomain[0] = new Date(this.xDomain[0] - diff);
-          this.xDomain[1] = new Date(this.xDomain[1] - diff);
+          this.xDomain[0] = this.xDomain[0] - diff;
+          this.xDomain[1] = this.xDomain[1] - diff;
         }
         else if (e.code == "ArrowRight") {
           const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.originalXDomain[1] - this.xDomain[1]);
-          this.xDomain[0] = new Date(this.xDomain[0] + diff);
-          this.xDomain[1] = new Date(this.xDomain[1] + diff);
+          this.xDomain[0] = this.xDomain[0] + diff;
+          this.xDomain[1] = this.xDomain[1] + diff;
         }
       }
       this.update();
     });
-
   }
-
-  newUpdate(): void {
-    if (this.brush) {
-      this.updateBrush();
-    }
-
-    this.filterId = 'filter' + id().toString();
-    this.filter = `url(#${this.filterId})`;
-
-    if (!this.initialized) {
-      this.addBrush();
-      this.initialized = true;
-      setTimeout(() => {
-        //select(this.chartElement.nativeElement).select('.brush').call(this.brush);
-      }, 1);
-    }
-  }
-
 
   updateBrush(): void {
     if (!this.brush) return;
     const height = this.dims.height;
     const width = this.dims.width;
-    console.log(height, width);
 
     this.brush.extent([
       [0, 0],
@@ -686,5 +686,13 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       .attr('stroke', undefined)
       .attr('fill-opacity', undefined);
     this.cd.markForCheck();
+  }
+
+  mouseMove(event): void {
+    this.tooltipArea.mouseMove(event);
+  }
+
+  mouseLeave(): void {
+    this.tooltipArea.hideTooltip();
   }
 }

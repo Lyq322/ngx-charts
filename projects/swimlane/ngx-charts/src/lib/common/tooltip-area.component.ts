@@ -34,6 +34,7 @@ export interface Tooltip {
   template: `
     <svg:g>
       <svg:rect
+        *ngIf="panning != 'onChart'"
         class="tooltip-area"
         [attr.x]="0"
         y="0"
@@ -108,6 +109,7 @@ export class TooltipArea {
   @Input() showPercentage: boolean = false;
   @Input() tooltipDisabled: boolean = false;
   @Input() tooltipTemplate: TemplateRef<any>;
+  @Input() panning: string = 'none';
 
   @Output() hover: EventEmitter<{ value: any }> = new EventEmitter();
 

@@ -180,6 +180,8 @@ export class AppComponent implements OnInit {
 
   // line, area
   autoScale = true;
+
+  // panning
   timeline = "false";
   panning = "onChart";
 
@@ -265,6 +267,59 @@ export class AppComponent implements OnInit {
   dataVisible: boolean = true;
   dimVisible: boolean = true;
   optsVisible: boolean = true;
+
+  customData = [
+    {
+      "name": "Belarus",
+      "series": [
+        {
+          "value": 2505,
+          "name": 0
+        },
+        {
+          "value": 2525,
+          "name": 20
+        },
+        {
+          "value": 3892,
+          "name": 30
+        },
+        {
+          "value": 2539,
+          "name": 50
+        },
+        {
+          "value": 6651,
+          "name": 90
+        }
+      ]
+    },
+    {
+      "name": "Marshall Islands",
+      "series": [
+        {
+          "value": 6401,
+          "name": 0
+        },
+        {
+          "value": 4603,
+          "name": 20
+        },
+        {
+          "value": 6440,
+          "name": 30
+        },
+        {
+          "value": 6600,
+          "name": 50
+        },
+        {
+          "value": 5570,
+          "name": 90
+        }
+      ]
+    }
+  ];
 
   constructor(public location: Location) {
     this.mathFunction = this.getFunction();

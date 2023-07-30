@@ -123,6 +123,7 @@ export class CircleSeriesComponent implements OnChanges, OnInit {
   @Input() activeEntries: any[];
   @Input() tooltipDisabled: boolean = false;
   @Input() tooltipTemplate: TemplateRef<any>;
+  @Input() brushEnd: boolean = true;
 
   @Output() select: EventEmitter<DataItem> = new EventEmitter();
   @Output() activate: EventEmitter<{ name: StringOrNumberOrDate }> = new EventEmitter();
@@ -165,7 +166,7 @@ export class CircleSeriesComponent implements OnChanges, OnInit {
       return label && this.visibleValue && label.toString() === this.visibleValue.toString() && d.value !== undefined;
     });
 
-    if (indexActiveDataPoint === -1) {
+    if (indexActiveDataPoint === -1 || !this.brushEnd) {
       // No valid point is 'active/hovered over' at this moment.
       return undefined;
     }
