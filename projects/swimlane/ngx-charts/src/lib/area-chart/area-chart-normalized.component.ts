@@ -8,7 +8,8 @@ import {
   ChangeDetectionStrategy,
   ContentChild,
   TemplateRef,
-  TrackByFunction
+  TrackByFunction,
+  ViewChild
 } from '@angular/core';
 import { scaleLinear, scalePoint, scaleTime } from 'd3-scale';
 import { curveLinear } from 'd3-shape';
@@ -23,6 +24,9 @@ import { SeriesType } from '../common/circle-series.component';
 import { LegendOptions, LegendPosition } from '../common/types/legend.model';
 import { ScaleType } from '../common/types/scale-type.enum';
 import { ViewDimensions } from '../common/types/view-dimension.interface';
+import { brushX } from 'd3-brush';
+import { select } from 'd3-selection';
+import { TooltipArea } from '../common/tooltip-area.component';
 
 @Component({
   selector: 'ngx-charts-area-chart-normalized',
@@ -94,46 +98,26 @@ import { ViewDimensions } from '../common/types/view-dimension.interface';
               [animations]="animations"
             />
           </svg:g>
-
-          <svg:g *ngIf="!tooltipDisabled" (mouseleave)="hideCircles()">
-            <svg:g
-              ngx-charts-tooltip-area
-              [dims]="dims"
-              [xSet]="xSet"
-              [xScale]="xScale"
-              [yScale]="yScale"
-              [results]="results"
-              [colors]="colors"
-              [showPercentage]="true"
-              [tooltipDisabled]="tooltipDisabled"
-              [tooltipTemplate]="seriesTooltipTemplate"
-              (hover)="updateHoveredVertical($event)"
-            />
-
-            <svg:g *ngFor="let series of results">
-              <svg:g
-                ngx-charts-circle-series
-                [type]="seriesType.Stacked"
-                [xScale]="xScale"
-                [yScale]="yScale"
-                [colors]="colors"
-                [activeEntries]="activeEntries"
-                [data]="series"
-                [scaleType]="scaleType"
-                [visibleValue]="hoveredVertical"
-                [tooltipDisabled]="tooltipDisabled"
-                [tooltipTemplate]="tooltipTemplate"
-                (select)="onClick($event, series)"
-                (activate)="onActivate($event)"
-                (deactivate)="onDeactivate($event)"
-              />
-            </svg:g>
-          </svg:g>
         </svg:g>
+      </svg:g>
+      <svg:g class="timeline" [attr.transform]="transform">
+        <svg:filter *ngIf="panning == 'onChart'" [attr.id]="filterId">
+          <svg:feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0 0 0 1 0"
+          />
+        </svg:filter>
+        <svg:g 
+          *ngIf="panning == 'onChart'" 
+          class="brush"
+          (mousemove)="mouseMove($event)"
+          (mouseleave)="mouseLeave()"
+        ></svg:g>
       </svg:g>
       <svg:g
         ngx-charts-timeline
-        *ngIf="timeline && scaleType != 'ordinal'"
+        *ngIf="panning == 'timeline' && scaleType != 'ordinal'"
         [attr.transform]="timelineTransform"
         [results]="results"
         [view]="[timelineWidth, height]"
@@ -159,6 +143,46 @@ import { ViewDimensions } from '../common/types/view-dimension.interface';
           />
         </svg:g>
       </svg:g>
+      <svg:g [attr.transform]="transform" class="area-chart chart">
+        <svg:g [attr.clip-path]="clipPath">
+          <svg:g *ngIf="!tooltipDisabled" (mouseleave)="hideCircles()">
+            <svg:g
+              ngx-charts-tooltip-area
+              [dims]="dims"
+              [xSet]="xSet"
+              [xScale]="xScale"
+              [yScale]="yScale"
+              [results]="results"
+              [colors]="colors"
+              [showPercentage]="true"
+              [tooltipDisabled]="tooltipDisabled"
+              [tooltipTemplate]="seriesTooltipTemplate"
+              [panning]="panning"
+              (hover)="updateHoveredVertical($event)"
+            />
+
+            <svg:g *ngFor="let series of results">
+              <svg:g
+                ngx-charts-circle-series
+                [type]="seriesType.Stacked"
+                [xScale]="xScale"
+                [yScale]="yScale"
+                [colors]="colors"
+                [activeEntries]="activeEntries"
+                [data]="series"
+                [scaleType]="scaleType"
+                [visibleValue]="hoveredVertical"
+                [tooltipDisabled]="tooltipDisabled"
+                [tooltipTemplate]="tooltipTemplate"
+                [brushEnd]="brushEnd"
+                (select)="onClick($event, series)"
+                (activate)="onActivate($event)"
+                (deactivate)="onDeactivate($event)"
+              />
+            </svg:g>
+          </svg:g>
+        </svg:g>
+      </svg:g>
     </ngx-charts-chart>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -175,7 +199,7 @@ export class AreaChartNormalizedComponent extends BaseChartComponent {
   @Input() showYAxisLabel: boolean = false;
   @Input() xAxisLabel: string;
   @Input() yAxisLabel: string;
-  @Input() timeline;
+  @Input() panning: string = "none";
   @Input() gradient;
   @Input() showGridLines: boolean = true;
   @Input() curve: any = curveLinear;
@@ -194,9 +218,11 @@ export class AreaChartNormalizedComponent extends BaseChartComponent {
   @Input() tooltipDisabled: boolean = false;
   @Input() wrapTicks = false;
 
+  @Output() onFilter = new EventEmitter();
   @Output() activate: EventEmitter<any> = new EventEmitter();
   @Output() deactivate: EventEmitter<any> = new EventEmitter();
 
+  @ViewChild(TooltipArea) tooltipArea:TooltipArea;
   @ContentChild('tooltipTemplate') tooltipTemplate: TemplateRef<any>;
   @ContentChild('seriesTooltipTemplate') seriesTooltipTemplate: TemplateRef<any>;
 
@@ -230,6 +256,15 @@ export class AreaChartNormalizedComponent extends BaseChartComponent {
   timelineTransform: any;
   timelinePadding: number = 10;
 
+  brushInitialized: boolean = false;
+  filterId: any;
+  filter: any;
+  brush: any;
+  timeScale: any;
+  originalXDomain: any;
+  lastScrollTop: number = 0;
+  brushEnd: boolean = true;
+
   update(): void {
     super.update();
 
@@ -248,13 +283,16 @@ export class AreaChartNormalizedComponent extends BaseChartComponent {
       legendPosition: this.legendPosition
     });
 
-    if (this.timeline) {
+    if (this.panning == 'timeline') {
       this.dims.height -= this.timelineHeight + this.margin[2] + this.timelinePadding;
     }
 
     this.xDomain = this.getXDomain();
     if (this.filteredDomain) {
       this.xDomain = this.filteredDomain;
+    }
+    else {
+      this.originalXDomain = this.xDomain;
     }
 
     this.seriesDomain = this.getSeriesDomain();
@@ -326,10 +364,30 @@ export class AreaChartNormalizedComponent extends BaseChartComponent {
 
     this.clipPathId = 'clip' + id().toString();
     this.clipPath = `url(#${this.clipPathId})`;
+
+    if (this.panning == "onChart") {
+      if (this.brush) {
+        this.updateBrush();
+      }
+
+      this.filterId = 'filter' + id().toString();
+      this.filter = `url(#${this.filterId})`;
+
+      if (!this.brushInitialized) {
+        this.addBrush();
+        this.brushInitialized = true;
+        setTimeout(() => {
+          this.updateBrush();
+        }, 0);
+      }
+    }
+    else {
+      this.brushInitialized = false;
+    }
   }
 
   updateTimeline(): void {
-    if (this.timeline) {
+    if (this.panning == 'timeline') {
       this.timelineWidth = this.dims.width;
       this.timelineXDomain = this.getXDomain();
       this.timelineXScale = this.getXScale(this.timelineXDomain, this.timelineWidth);
@@ -399,6 +457,115 @@ export class AreaChartNormalizedComponent extends BaseChartComponent {
     this.filteredDomain = domain;
     this.xDomain = this.filteredDomain;
     this.xScale = this.getXScale(this.xDomain, this.dims.width);
+
+    if (this.panning == 'onChart') {
+      select(this.chartElement.nativeElement).select('.brush').call(this.brush.move, null);
+    }
+
+    let curRange, originalRange;
+    if (this.xDomain[0] instanceof Date) {
+      curRange = this.filteredDomain[1].getTime() - this.filteredDomain[0].getTime();
+      originalRange = this.originalXDomain[1].getTime() - this.originalXDomain[0].getTime();
+    }
+    else {
+      curRange = this.filteredDomain[1] - this.filteredDomain[0];
+      originalRange = this.originalXDomain[1] - this.originalXDomain[0];
+    }
+    if (curRange < originalRange / 100) return;
+  }
+
+  addBrush(): void {
+    const height = this.height;
+    const width = this.width;
+
+    this.brush = brushX()
+      .extent([
+        [0, 0],
+        [width, height]
+      ])
+      .on('start', () => {
+        this.tooltipArea.hideTooltip();
+        this.brushEnd = false;
+      })
+      .on('end', ({ selection }) => {
+        this.brushEnd = true;
+        if (!selection) return;
+        const newSelection = selection || this.xScale.range();
+        const newDomain = newSelection.map(this.xScale.invert);
+
+        this.onFilter.emit(newDomain);
+        this.cd.markForCheck();
+
+        this.updateDomain(newDomain);
+      });
+      
+    select(this.chartElement.nativeElement).select('.brush').call(this.brush);
+
+    select(this.chartElement.nativeElement).select('.timeline').on('click', () => {
+      this.onFilter.emit(this.originalXDomain);
+      this.updateDomain(this.originalXDomain);
+    });
+
+    select('body').on('keydown', (e) => {
+      if (e.code == "ArrowLeft" || e.code == "ArrowRight") {
+        this.tooltipArea.hideTooltip();
+        this.hideCircles();
+      }
+      if (this.scaleType == ScaleType.Time) {
+        if (e.code == "ArrowLeft") {
+          const diff = Math.min((this.xDomain[1].getTime() - this.xDomain[0].getTime()) / 100, this.xDomain[0].getTime() - this.originalXDomain[0].getTime());
+          this.xDomain[0] = new Date(this.xDomain[0].getTime() - diff);
+          this.xDomain[1] = new Date(this.xDomain[1].getTime() - diff);
+        }
+        else if (e.code == "ArrowRight") {
+          const diff = Math.min((this.xDomain[1].getTime() - this.xDomain[0].getTime()) / 100, this.originalXDomain[1].getTime() - this.xDomain[1].getTime());
+          this.xDomain[0] = new Date(this.xDomain[0].getTime() + diff);
+          this.xDomain[1] = new Date(this.xDomain[1].getTime() + diff);
+        }
+      }
+      else if (this.scaleType == ScaleType.Linear) {
+        if (e.code == "ArrowLeft") {
+          const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.xDomain[0] - this.originalXDomain[0]);
+          this.xDomain[0] = this.xDomain[0] - diff;
+          this.xDomain[1] = this.xDomain[1] - diff;
+        }
+        else if (e.code == "ArrowRight") {
+          const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.originalXDomain[1] - this.xDomain[1]);
+          this.xDomain[0] = this.xDomain[0] + diff;
+          this.xDomain[1] = this.xDomain[1] + diff;
+        }
+      }
+      this.update();
+    });
+  }
+
+  updateBrush(): void {
+    if (!this.brush) return;
+    const height = this.dims.height;
+    const width = this.dims.width;
+
+    this.brush.extent([
+      [0, 0],
+      [width, height]
+    ]);
+
+    select(this.chartElement.nativeElement).select('.brush').call(this.brush);
+
+    // clear hardcoded properties so they can be defined by CSS
+    select(this.chartElement.nativeElement)
+      .select('.selection')
+      .attr('fill', undefined)
+      .attr('stroke', undefined)
+      .attr('fill-opacity', undefined);
+    this.cd.markForCheck();
+  }
+
+  mouseMove(event): void {
+    this.tooltipArea.mouseMove(event);
+  }
+
+  mouseLeave(): void {
+    this.tooltipArea.hideTooltip();
   }
 
   updateHoveredVertical(item): void {

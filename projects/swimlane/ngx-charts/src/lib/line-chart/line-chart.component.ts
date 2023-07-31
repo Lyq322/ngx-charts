@@ -298,7 +298,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
   timelineXDomain: any;
   timelineTransform: any;
   timelinePadding: number = 10;
-  initialized: boolean = false;
+  brushInitialized: boolean = false;
   filterId: any;
   filter: any;
   brush: any;
@@ -368,16 +368,16 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       this.filterId = 'filter' + id().toString();
       this.filter = `url(#${this.filterId})`;
 
-      if (!this.initialized) {
+      if (!this.brushInitialized) {
         this.addBrush();
-        this.initialized = true;
+        this.brushInitialized = true;
         setTimeout(() => {
           this.updateBrush();
         }, 0);
       }
     }
     else {
-      this.initialized = false;
+      this.brushInitialized = false;
     }
   }
 
@@ -630,7 +630,8 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
 
         this.updateDomain(newDomain);
       });
-      
+
+    console.log("add brush", document.body.contains(document.querySelector('.brush')));
     select(this.chartElement.nativeElement).select('.brush').call(this.brush);
 
     select(this.chartElement.nativeElement).select('.timeline').on('click', () => {
@@ -639,7 +640,11 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
     });
 
     select('body').on('keydown', (e) => {
-      if (this.xDomain[0] instanceof Date) {
+      if (e.code == "ArrowLeft" || e.code == "ArrowRight") {
+        this.tooltipArea.hideTooltip();
+        this.hideCircles();
+      }
+      if (this.scaleType == ScaleType.Time) {
         if (e.code == "ArrowLeft") {
           const diff = Math.min((this.xDomain[1].getTime() - this.xDomain[0].getTime()) / 100, this.xDomain[0].getTime() - this.originalXDomain[0].getTime());
           this.xDomain[0] = new Date(this.xDomain[0].getTime() - diff);
@@ -651,7 +656,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
           this.xDomain[1] = new Date(this.xDomain[1].getTime() + diff);
         }
       }
-      else if (typeof this.xDomain[0] == 'number') {
+      else if (this.scaleType == ScaleType.Linear) {
         if (e.code == "ArrowLeft") {
           const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.xDomain[0] - this.originalXDomain[0]);
           this.xDomain[0] = this.xDomain[0] - diff;
@@ -677,6 +682,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       [width, height]
     ]);
 
+    console.log("update brush", document.body.contains(document.querySelector('.brush')));
     select(this.chartElement.nativeElement).select('.brush').call(this.brush);
 
     // clear hardcoded properties so they can be defined by CSS

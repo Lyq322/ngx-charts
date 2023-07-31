@@ -183,7 +183,7 @@ export class AppComponent implements OnInit {
 
   // panning
   timeline = "false";
-  panning = "onChart";
+  panning = "none";
 
   // margin
   margin: boolean = false;
