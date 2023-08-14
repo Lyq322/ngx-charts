@@ -262,7 +262,6 @@ export class AreaChartNormalizedComponent extends BaseChartComponent {
   brush: any;
   timeScale: any;
   originalXDomain: any;
-  lastScrollTop: number = 0;
   brushEnd: boolean = true;
 
   update(): void {
@@ -287,12 +286,10 @@ export class AreaChartNormalizedComponent extends BaseChartComponent {
       this.dims.height -= this.timelineHeight + this.margin[2] + this.timelinePadding;
     }
 
-    this.xDomain = this.getXDomain();
+    this.originalXDomain = this.getXDomain();
+    this.xDomain = this.originalXDomain;
     if (this.filteredDomain) {
       this.xDomain = this.filteredDomain;
-    }
-    else {
-      this.originalXDomain = this.xDomain;
     }
 
     this.seriesDomain = this.getSeriesDomain();

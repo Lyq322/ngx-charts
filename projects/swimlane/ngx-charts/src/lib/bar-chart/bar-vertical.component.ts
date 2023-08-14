@@ -6,7 +6,9 @@ import {
   EventEmitter,
   ChangeDetectionStrategy,
   ContentChild,
-  TemplateRef
+  ViewChild,
+  TemplateRef,
+  ElementRef
 } from '@angular/core';
 import { scaleBand, scaleLinear } from 'd3-scale';
 
@@ -17,6 +19,11 @@ import { DataItem } from '../models/chart-data.model';
 import { LegendOptions, LegendPosition } from '../common/types/legend.model';
 import { ScaleType } from '../common/types/scale-type.enum';
 import { ViewDimensions } from '../common/types/view-dimension.interface';
+import { brushX } from 'd3-brush';
+import { select } from 'd3-selection';
+import { id } from '../utils/id';
+import { TooltipDirective } from '../common/tooltip/tooltip.directive';
+import { SeriesVerticalComponent } from './series-vertical.component';
 
 @Component({
   selector: 'ngx-charts-bar-vertical',
@@ -88,7 +95,7 @@ import { ViewDimensions } from '../common/types/view-dimension.interface';
       </svg:g>
       <svg:g
         ngx-charts-timeline
-        *ngIf="timeline"
+        *ngIf="panning == 'timeline'"
         [attr.transform]="timelineTransform"
         [results]="results"
         [view]="[timelineWidth, height]"
@@ -101,16 +108,29 @@ import { ViewDimensions } from '../common/types/view-dimension.interface';
         (onDomainChange)="updateDomain($event)"
       >
         <svg:g
-        ngx-charts-series-vertical
-        [xScale]="timelineXScale"
-        [yScale]="timelineYScale"
-        [colors]="colors"
-        [series]="results"
-        [dims]="dims"
-        [tooltipDisabled]="true"
-        [showDataLabel]="false"
-        [roundEdges]="roundEdges"
-        [noBarWhenZero]="noBarWhenZero"
+          ngx-charts-series-vertical
+          [xScale]="timelineXScale"
+          [yScale]="timelineYScale"
+          [colors]="colors"
+          [series]="results"
+          [dims]="dims"
+          [tooltipDisabled]="true"
+          [showDataLabel]="false"
+          [roundEdges]="roundEdges"
+          [noBarWhenZero]="noBarWhenZero"
+        ></svg:g>
+      </svg:g>
+      <svg:g class="timeline" [attr.transform]="transform">
+        <svg:filter *ngIf="panning == 'onChart'" [attr.id]="filterId">
+          <svg:feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0.3333 0.3333 0.3333 0 0 0 0 0 1 0"
+          />
+        </svg:filter>
+        <svg:g 
+          *ngIf="panning == 'onChart'" 
+          class="brush"
         ></svg:g>
       </svg:g>
     </ngx-charts-chart>
@@ -152,12 +172,15 @@ export class BarVerticalComponent extends BaseChartComponent {
   @Input() dataLabelFormatting: any;
   @Input() noBarWhenZero: boolean = true;
   @Input() wrapTicks = false;
-  @Input() timeline: boolean;
+  @Input() panning: string = "none";
 
+  @Output() onFilter = new EventEmitter();
   @Output() activate: EventEmitter<any> = new EventEmitter();
   @Output() deactivate: EventEmitter<any> = new EventEmitter();
 
   @ContentChild('tooltipTemplate') tooltipTemplate: TemplateRef<any>;
+  @ViewChild(TooltipDirective) tooltipDirective:TooltipDirective;
+  @ViewChild(SeriesVerticalComponent) seriesVertical:SeriesVerticalComponent;
 
   dims: ViewDimensions;
   xScale: any;
@@ -182,6 +205,15 @@ export class BarVerticalComponent extends BaseChartComponent {
   filteredDomain: any;
   filteredResults: any = this.results;
 
+  brushInitialized: boolean = false;
+  filterId: any;
+  filter: any;
+  brush: any;
+  timeScale: any;
+  panDisplay: boolean = true;
+  brushing: boolean = false;
+  showTooltip: boolean = false;
+
   update(): void {
     super.update();
 
@@ -205,7 +237,7 @@ export class BarVerticalComponent extends BaseChartComponent {
       legendPosition: this.legendPosition
     });
 
-    if (this.timeline) {
+    if (this.panning == 'timeline') {
       this.dims.height -= this.timelineHeight + this.margin[2] + this.timelinePadding;
     }
 
@@ -233,11 +265,32 @@ export class BarVerticalComponent extends BaseChartComponent {
 
     this.transform = `translate(${this.dims.xOffset} , ${this.margin[0] + this.dataLabelMaxHeight.negative})`;
 
-    this.updateResult();
+    this.updateResult();;
+
+    if (this.panning == "onChart") {
+      if (this.brush) {
+        this.updateBrush();
+      }
+
+      this.filterId = 'filter' + id().toString();
+      this.filter = `url(#${this.filterId})`;
+
+      if (!this.brushInitialized) {
+        this.addBrush();
+        this.addTooltip();
+        this.brushInitialized = true;
+        setTimeout(() => {
+          this.updateBrush();
+        }, 0);
+      }
+    }
+    else {
+      this.brushInitialized = false;
+    }
   }
 
   updateTimeline(): void {
-    if (this.timeline) {
+    if (this.panning == 'timeline') {
       this.timelineWidth = this.dims.width;
       this.timelineXDomain = this.originalXDomain;
       this.timelineXScale = this.getXScale(this.timelineXDomain, this.timelineWidth);
@@ -247,7 +300,7 @@ export class BarVerticalComponent extends BaseChartComponent {
   }
 
   updateResult(): void {
-    if (this.timeline) {
+    if (this.panning != 'none') {
       this.filteredResults = this.xDomain.map(a => {
         for (const d of this.results) {
           if (d.name == a) {
@@ -275,7 +328,138 @@ export class BarVerticalComponent extends BaseChartComponent {
     this.filteredDomain = domain;
     this.xDomain = this.filteredDomain;
     this.xScale = this.getXScale(this.xDomain, this.dims.width);
+
+    if (this.panning == 'onChart') {
+      select(this.chartElement.nativeElement).select('.brush').call(this.brush.move, null);
+    }
+
+    let curRange, originalRange;
+    if (this.xDomain[0] instanceof Date) {
+      curRange = this.filteredDomain[1].getTime() - this.filteredDomain[0].getTime();
+      originalRange = this.originalXDomain[1].getTime() - this.originalXDomain[0].getTime();
+    }
+    else {
+      curRange = this.filteredDomain[1] - this.filteredDomain[0];
+      originalRange = this.originalXDomain[1] - this.originalXDomain[0];
+    }
+    if (curRange < originalRange / 100) return;
+    
     this.update();
+  }
+
+  addBrush(): void {
+    const height = this.height;
+    const width = this.width;
+
+    this.brush = brushX()
+      .extent([
+        [0, 0],
+        [width, height]
+      ])
+      .on('start', () => {
+        this.brushing = true;
+      })
+      .on('end', ({ selection }) => {
+        this.brushing = false;
+        if (!selection) return;
+        const newSelection = selection || this.xScale.range();
+        console.log(newSelection);
+
+        let newDomain = [];
+        const padding = this.xScale.step() * this.xScale.padding();
+        const barWidth = this.xScale.step() - padding;
+
+        const startIndex = Math.floor(((newSelection[0] + padding) / (barWidth + padding)));
+        const endIndex = Math.floor((newSelection[1] / (barWidth + padding)));
+
+        for (let i = startIndex; i <= endIndex; i++) {
+          newDomain.push(this.xScale.domain()[i]);
+        }
+
+        this.onFilter.emit(newDomain);
+        this.cd.markForCheck();
+
+        this.updateDomain(newDomain);
+      });
+      
+    select(this.chartElement.nativeElement).select('.brush').call(this.brush);
+
+    select(this.chartElement.nativeElement).select('.timeline').on('click', () => {
+      this.onFilter.emit(this.originalXDomain);
+      this.updateDomain(this.originalXDomain);
+    });
+
+    select('body').on('keydown', (e) => {
+      if (this.xDomain[0] instanceof Date) {
+        if (e.code == "ArrowLeft") {
+          const diff = Math.min((this.xDomain[1].getTime() - this.xDomain[0].getTime()) / 100, this.xDomain[0].getTime() - this.originalXDomain[0].getTime());
+          this.xDomain[0] = new Date(this.xDomain[0].getTime() - diff);
+          this.xDomain[1] = new Date(this.xDomain[1].getTime() - diff);
+        }
+        else if (e.code == "ArrowRight") {
+          const diff = Math.min((this.xDomain[1].getTime() - this.xDomain[0].getTime()) / 100, this.originalXDomain[1].getTime() - this.xDomain[1].getTime());
+          this.xDomain[0] = new Date(this.xDomain[0].getTime() + diff);
+          this.xDomain[1] = new Date(this.xDomain[1].getTime() + diff);
+        }
+      }
+      else if (typeof this.xDomain[0] == 'number') {
+        if (e.code == "ArrowLeft") {
+          const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.xDomain[0] - this.originalXDomain[0]);
+          this.xDomain[0] = this.xDomain[0] - diff;
+          this.xDomain[1] = this.xDomain[1] - diff;
+        }
+        else if (e.code == "ArrowRight") {
+          const diff = Math.min((this.xDomain[1] - this.xDomain[0]) / 100, this.originalXDomain[1] - this.xDomain[1]);
+          this.xDomain[0] = this.xDomain[0] + diff;
+          this.xDomain[1] = this.xDomain[1] + diff;
+        }
+      }
+      this.update();
+    });
+  }
+
+  addTooltip(): void {
+    document.querySelector('.timeline').addEventListener('mousemove', (event: MouseEvent) => {
+      if (this.brushing) return;
+      const oldDisplay = (document.querySelector('.timeline') as HTMLElement).style.display;
+      (document.querySelector('.timeline') as HTMLElement).style.display = 'none';
+      const bar = document.elementFromPoint(event.clientX, event.clientY);
+      //console.log(bar)
+      if (bar) {
+        if (bar.classList[0] == 'bar') {
+          //console.log("show");
+          this.showTooltip = true;
+          this.seriesVertical.showTooltip();
+        }
+        else {
+          //console.log("hide");
+          this.showTooltip = false;
+          this.seriesVertical.hideTooltip();
+        }
+      }
+      (document.querySelector('.timeline') as HTMLElement).style.display = oldDisplay;
+    })
+  }
+
+  updateBrush(): void {
+    if (!this.brush) return;
+    const height = this.dims.height;
+    const width = this.dims.width;
+
+    this.brush.extent([
+      [0, 0],
+      [width, height]
+    ]);
+
+    select(this.chartElement.nativeElement).select('.brush').call(this.brush);
+
+    // clear hardcoded properties so they can be defined by CSS
+    select(this.chartElement.nativeElement)
+      .select('.selection')
+      .attr('fill', undefined)
+      .attr('stroke', undefined)
+      .attr('fill-opacity', undefined);
+    this.cd.markForCheck();
   }
 
   getXDomain(): any[] {

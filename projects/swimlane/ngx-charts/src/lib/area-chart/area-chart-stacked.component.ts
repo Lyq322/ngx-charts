@@ -260,7 +260,6 @@ export class AreaChartStackedComponent extends BaseChartComponent {
   brush: any;
   timeScale: any;
   originalXDomain: any;
-  lastScrollTop: number = 0;
   brushEnd: boolean = true;
 
   seriesType = SeriesType;

@@ -631,7 +631,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
         this.updateDomain(newDomain);
       });
 
-    console.log("add brush", document.body.contains(document.querySelector('.brush')));
+    console.log("add brush", document.querySelector('.brush'));
     select(this.chartElement.nativeElement).select('.brush').call(this.brush);
 
     select(this.chartElement.nativeElement).select('.timeline').on('click', () => {
@@ -682,7 +682,7 @@ export class LineChartComponent extends BaseChartComponent implements OnInit {
       [width, height]
     ]);
 
-    console.log("update brush", document.body.contains(document.querySelector('.brush')));
+    console.log("update brush", document.querySelector('.brush'));
     select(this.chartElement.nativeElement).select('.brush').call(this.brush);
 
     // clear hardcoded properties so they can be defined by CSS

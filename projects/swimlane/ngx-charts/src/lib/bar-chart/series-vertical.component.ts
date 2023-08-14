@@ -7,7 +7,8 @@ import {
   ChangeDetectionStrategy,
   TemplateRef,
   PLATFORM_ID,
-  Inject
+  Inject,
+  ViewChild
 } from '@angular/core';
 import { trigger, style, animate, transition } from '@angular/animations';
 import { formatLabel, escapeLabel } from '../common/label.helper';
@@ -22,6 +23,7 @@ import { ViewDimensions } from '../common/types/view-dimension.interface';
 import { BarOrientation } from '../common/types/bar-orientation.enum';
 import { ScaleType } from '../common/types/scale-type.enum';
 import { isPlatformServer } from '@angular/common';
+import { TooltipDirective } from '../common/tooltip/tooltip.directive';
 
 @Component({
   selector: 'g[ngx-charts-series-vertical]',
@@ -137,6 +139,8 @@ export class SeriesVerticalComponent implements OnChanges {
   @Output() activate = new EventEmitter();
   @Output() deactivate = new EventEmitter();
   @Output() dataLabelHeightChanged = new EventEmitter();
+
+  @ViewChild(TooltipDirective) tooltipDirective:TooltipDirective;
 
   tooltipPlacement: PlacementTypes;
   tooltipType: StyleTypes;
@@ -337,5 +341,13 @@ export class SeriesVerticalComponent implements OnChanges {
 
   trackDataLabelBy(index: number, barLabel: any): string {
     return index + '#' + barLabel.series + '#' + barLabel.total;
+  }
+
+  showTooltip(): void {
+    this.tooltipDirective.showTooltip();
+  }
+
+  hideTooltip(): void {
+    this.tooltipDirective.hideTooltip();
   }
 }

@@ -264,7 +264,6 @@ export class AreaChartComponent extends BaseChartComponent {
   brush: any;
   timeScale: any;
   originalXDomain: any;
-  lastScrollTop: number = 0;
   brushEnd: boolean = true;
 
   update(): void {
